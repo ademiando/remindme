@@ -36,71 +36,79 @@ FROM_EMAIL=you@yourdomain.com
 ## Supabase SQL
 Run this in **SQL Editor**:
 ```sql
--- Enable pgcrypto (for gen_random_uuid) if not already
-create extension if not exists pgcrypto;
-
+-- 1. Table for chat history
 create table if not exists chat_history (
-  id uuid primary key default gen_random_uuid(),
-  user_id uuid not null,
-  content text not null,
-  model text not null,
-  created_at timestamp with time zone default now()
+    id uuid primary key default uuid_generate_v4(),
+    user_id uuid references auth.users not null,
+    role text not null, -- 'user' atau 'assistant'
+    content text not null,
+    model text default 'gpt-3.5-turbo',
+    created_at timestamp with time zone default now()
 );
 
+-- 2. Table for scheduled prompts
 create table if not exists scheduled_prompts (
-  id uuid primary key default gen_random_uuid(),
-  user_id uuid not null,
-  prompt text not null,
-  model text not null,
-  schedule_time timestamp with time zone not null,
-  channel text not null, -- 'email' | 'telegram'
-  created_at timestamp with time zone default now()
+    id uuid primary key default uuid_generate_v4(),
+    user_id uuid references auth.users not null,
+    prompt text not null,
+    model text default 'gpt-3.5-turbo',
+    schedule_time time not null,
+    frequency text default 'daily', -- daily / weekly / monthly
+    max_notifications int default 2,
+    created_at timestamp with time zone default now()
 );
 
+-- 3. Table for subscriptions
 create table if not exists subscriptions (
-  id uuid primary key default gen_random_uuid(),
-  user_id uuid unique not null,
-  plan text not null default 'free', -- 'free' | 'pro'
-  max_scheduled int not null default 2, -- free users get 2
-  created_at timestamp with time zone default now()
+    id uuid primary key default uuid_generate_v4(),
+    user_id uuid references auth.users not null,
+    plan text default 'free', -- free / pro
+    created_at timestamp with time zone default now()
 );
 
--- Policy templates (row level security optional, keep simple for demo)
+-- Activated RLS
 alter table chat_history enable row level security;
 alter table scheduled_prompts enable row level security;
 alter table subscriptions enable row level security;
 
-create policy if not exists "chat_history_select_own"
-on chat_history for select
-using (auth.uid() = user_id);
+-- Policies for chat_history
+create policy "chat_history_select_own"
+    on chat_history for select
+    using (auth.uid() = user_id);
 
-create policy if not exists "chat_history_insert_own"
-on chat_history for insert
-with check (auth.uid() = user_id);
+create policy "chat_history_insert_own"
+    on chat_history for insert
+    with check (auth.uid() = user_id);
 
-create policy if not exists "scheduled_prompts_select_own"
-on scheduled_prompts for select
-using (auth.uid() = user_id);
+-- Policies for scheduled_prompts
+create policy "scheduled_prompts_select_own"
+    on scheduled_prompts for select
+    using (auth.uid() = user_id);
 
-create policy if not exists "scheduled_prompts_ins_own"
-on scheduled_prompts for insert
-with check (auth.uid() = user_id);
+create policy "scheduled_prompts_insert_own"
+    on scheduled_prompts for insert
+    with check (auth.uid() = user_id);
 
-create policy if not exists "scheduled_prompts_del_own"
-on scheduled_prompts for delete
-using (auth.uid() = user_id);
+create policy "scheduled_prompts_update_own"
+    on scheduled_prompts for update
+    using (auth.uid() = user_id);
 
-create policy if not exists "subscriptions_select_own"
-on subscriptions for select
-using (auth.uid() = user_id);
+create policy "scheduled_prompts_delete_own"
+    on scheduled_prompts for delete
+    using (auth.uid() = user_id);
 
-create policy if not exists "subscriptions_upsert_own"
-on subscriptions for insert
-with check (auth.uid() = user_id);
+-- Policies for subscriptions
+create policy "subscriptions_select_own"
+    on subscriptions for select
+    using (auth.uid() = user_id);
 
-create policy if not exists "subscriptions_update_own"
-on subscriptions for update
-using (auth.uid() = user_id);
+create policy "subscriptions_insert_own"
+    on subscriptions for insert
+    with check (auth.uid() = user_id);
+
+create policy "subscriptions_update_own"
+    on subscriptions for update
+    using (auth.uid() = user_id);
 ```
 
 ## Vercel Cron
